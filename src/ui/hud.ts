@@ -86,7 +86,6 @@ export class Hud {
       h('div', { class: 'toolbar' },
         tool('🛒', 'Tienda', key(13), 'Tienda (Enter / E)', 'primary'),
         tool('🧱', 'Terreno', key(84), 'Modo terreno (T)'),
-        tool('🎯', 'Centro', key(82), 'Ir al centro (R)'),
         tool('💾', 'Guardar', actions.save, 'Guardar partida (F5)'),
         tool('📂', 'Cargar', actions.load, 'Cargar partida (F6)'),
         h('span', { class: 'sep' }),
