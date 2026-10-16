@@ -1,0 +1,19 @@
+# Cabeceras para Cloudflare Pages (también las entiende Netlify).
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# La página siempre se revalida para recibir las versiones nuevas.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+
+# JS y CSS llevan un hash en el nombre: nunca cambian.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Datos extraídos del juego (sprites, sonidos, game.json): sin hash, caché de un día.
+/classic/*
+  Cache-Control: public, max-age=86400

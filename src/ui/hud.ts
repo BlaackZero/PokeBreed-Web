@@ -2,10 +2,11 @@
 // ficha del Pokémon bajo el ratón y avisos de cría.
 import type { Instance } from '../gm/instance';
 import type { Runtime } from '../gm/runtime';
-import { button, h, setText } from './dom';
+import { bind, getLang, setLang, t, tg } from '../i18n';
+import { BADGE_NAMES, type UiKey } from '../i18n/ui';
+import { button, formatMoney, h, setText } from './dom';
 
 const BADGES = ['boulder', 'cascade', 'thunder', 'rainbow', 'soul', 'marsh', 'volcano', 'earth'];
-const BADGE_NAMES = ['Roca', 'Cascada', 'Trueno', 'Arcoíris', 'Alma', 'Pantano', 'Volcán', 'Tierra'];
 
 export interface HudActions {
   save: () => void;
@@ -20,11 +21,15 @@ export interface HudActions {
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Botón con icono y texto; en pantallas estrechas solo se ve el icono. */
-function tool(icon: string, label: string, onClick: () => void, title: string, cls = '') {
-  const b = button(icon, onClick, { title, cls });
-  b.append(h('span', { class: 'lbl' }, ` ${label}`));
+function tool(icon: string, label: UiKey, onClick: () => void, title: UiKey, cls = '') {
+  const b = bind(button(icon, onClick, { cls }), () => t(title), 'title');
+  b.append(bind(h('span', { class: 'lbl' }), () => ` ${t(label)}`));
   return b;
 }
+
+/** Botón solo con icono. */
+const iconButton = (icon: string, onClick: () => void, title: UiKey, cls = '') =>
+  bind(button(icon, onClick, { cls }), () => t(title), 'title');
 
 /** "charmander_baby_m" → "Charmander (bebé)", "squirtle_egg" → "Huevo de Squirtle". */
 export function prettyName(objName: string) {
@@ -34,7 +39,7 @@ export function prettyName(objName: string) {
   const baby = /_baby/.test(n);
   n = n.replace(/_baby/, '').replace(/_(m|f|p|g)$/, '');
   n = n.split('_').filter(Boolean).map(cap).join(' ');
-  return egg ? `Huevo de ${n}` : baby ? `${n} (bebé)` : n;
+  return egg ? t('egg', { name: n }) : baby ? t('baby', { name: n }) : n;
 }
 
 function genderOf(i: Instance) {
@@ -50,7 +55,7 @@ export class Hud {
   private speed = h('span', { class: 'value' });
   private fps = h('small', {});
   private badges: HTMLImageElement[] = [];
-  private terrain = h('div', { class: 'chip terrain' }, '🌹 Modo terreno: arrastra vallas y terrenos · T para salir');
+  private terrain = bind(h('div', { class: 'chip terrain' }), () => t('terrainMode'));
   private card = h('div', { class: 'card' });
   private cardImg = h('img', { alt: '' }) as HTMLImageElement;
   private cardName = h('strong', {});
@@ -64,11 +69,11 @@ export class Hud {
   private breedMsgIndex = -1;
 
   constructor(private rt: Runtime, private spriteUrl: (spriteIndex: number, frame: number) => string, actions: HudActions) {
-    this.badges = BADGES.map((b, k) => {
-      const img = h('img', { src: spriteUrl(this.spriteIndex(`${b}_badge`), 0), alt: '', title: `Medalla ${BADGE_NAMES[k]}` }) as HTMLImageElement;
-      return img;
-    });
-    const mute = button('🔊', () => { mute.textContent = actions.toggleMute() ? '🔇' : '🔊'; }, { title: 'Silenciar' });
+    this.badges = BADGES.map((b, k) => bind(
+      h('img', { src: spriteUrl(this.spriteIndex(`${b}_badge`), 0), alt: '' }) as HTMLImageElement,
+      () => t('badge', { name: BADGE_NAMES[getLang()][k] }), 'title'));
+    const mute = iconButton('🔊', () => { mute.textContent = actions.toggleMute() ? '🔇' : '🔊'; }, 'mute');
+    const lang = bind(iconButton('', () => setLang(getLang() === 'es' ? 'en' : 'es'), 'langButtonTitle', 'lang'), () => `🌐 ${t('langButton')}`);
     const key = (code: number) => () => rt.input.tap(code);
 
     this.el = h('div', { class: 'hud' },
@@ -78,23 +83,24 @@ export class Hud {
       ),
       h('div', { class: 'hud-center chip badges' }, ...this.badges),
       h('div', { class: 'hud-right chip speed' },
-        button('−', () => this.setSpeed(-5), { cls: 'small', title: 'Más lento (Re Pág)' }),
+        iconButton('−', () => this.setSpeed(-5), 'slower', 'small'),
         h('span', { class: 'speed-label' }, '⏱ ', this.speed, ' ', this.fps),
-        button('+', () => this.setSpeed(5), { cls: 'small', title: 'Más rápido (Av Pág)' }),
+        iconButton('+', () => this.setSpeed(5), 'faster', 'small'),
       ),
       this.terrain,
       h('div', { class: 'toolbar' },
-        tool('🛒', 'Tienda', key(13), 'Tienda (Enter / E)', 'primary'),
-        tool('🧱', 'Terreno', key(84), 'Modo terreno (T)'),
-        tool('💾', 'Guardar', actions.save, 'Guardar partida (F5)'),
-        tool('📂', 'Cargar', actions.load, 'Cargar partida (F6)'),
+        tool('🛒', 'shop', key(13), 'shopTitle', 'primary'),
+        tool('🧱', 'terrain', key(84), 'terrainTitle'),
+        tool('💾', 'save', actions.save, 'saveTitle'),
+        tool('📂', 'load', actions.load, 'loadTitle'),
         h('span', { class: 'sep' }),
-        button('➖', () => actions.zoom(1 / 1.15), { title: 'Alejar (rueda del ratón)' }),
-        button('➕', () => actions.zoom(1.15), { title: 'Acercar (rueda del ratón)' }),
+        iconButton('➖', () => actions.zoom(1 / 1.15), 'zoomOut'),
+        iconButton('➕', () => actions.zoom(1.15), 'zoomIn'),
         mute,
-        button('⛶', actions.fullscreen, { title: 'Pantalla completa (F11)' }),
-        button('❔', actions.help, { title: 'Ayuda (F1)' }),
-        button('🏠', actions.menu, { title: 'Volver al menú principal' }),
+        iconButton('⛶', actions.fullscreen, 'fullscreen'),
+        lang,
+        iconButton('❔', actions.help, 'help'),
+        iconButton('🏠', actions.menu, 'menu'),
       ),
       this.card,
       this.toasts,
@@ -118,18 +124,18 @@ export class Hud {
   show(on: boolean) { this.el.classList.toggle('hidden', !on); }
 
   toast(text: string) {
-    const t = h('div', { class: 'toast' }, text.replace(/#/g, ' '));
-    this.toasts.prepend(t);
+    const el = h('div', { class: 'toast' }, text.replace(/#/g, ' '));
+    this.toasts.prepend(el);
     while (this.toasts.childElementCount > 4) this.toasts.lastElementChild?.remove();
-    setTimeout(() => t.classList.add('out'), 3500);
-    setTimeout(() => t.remove(), 4000);
+    setTimeout(() => el.classList.add('out'), 3500);
+    setTimeout(() => el.remove(), 4000);
   }
 
   /** Se llama en cada frame. */
   update() {
     const rt = this.rt;
     const g = rt.globals;
-    setText(this.money, `$${(Number(g.money) || 0).toLocaleString('es')}`);
+    setText(this.money, formatMoney(g.money));
 
     let pokemon = 0;
     for (const i of rt.instances) if (!i.dead && i.v.expmax !== undefined && !/_egg$/.test(i.obj.name)) pokemon++;
@@ -144,7 +150,7 @@ export class Hud {
       for (const m of rt.instancesOf(this.breedMsgIndex)) {
         if (this.toasted.has(m) || m.v.message === undefined) continue;
         this.toasted.add(m);
-        this.toast(`🥚 ${m.v.message}`);
+        this.toast(`🥚 ${tg(String(m.v.message))}`);
       }
     }
 
@@ -174,11 +180,11 @@ export class Hud {
     const egg = /_egg$/.test(target.obj.name);
     // Los Pokémon evolucionan en cuanto exp llega a expmax: si siguen así, ya no evolucionan más.
     const final = !egg && exp >= max;
-    setText(this.cardExp, egg ? `Eclosión ${Math.min(100, Math.round((exp / max) * 100))}%`
-      : final ? 'Evolución máxima' : `Exp ${Math.round(exp)} / ${Math.round(max)}`);
+    setText(this.cardExp, egg ? t('hatching', { pct: Math.min(100, Math.round((exp / max) * 100)) })
+      : final ? t('maxEvolution') : `Exp ${Math.round(exp)} / ${Math.round(max)}`);
     this.cardBar.style.width = `${Math.min(100, (exp / max) * 100)}%`;
     const sell = Number(target.v.sell);
-    setText(this.cardSell, sell > 0 ? `Se vende por $${sell}` : '');
+    setText(this.cardSell, sell > 0 ? t('sellsFor', { price: sell }) : '');
     const x = Math.min(this.pointer.x + 18, window.innerWidth - 240);
     const y = Math.min(this.pointer.y + 18, window.innerHeight - 110);
     this.card.style.transform = `translate(${x}px, ${y}px)`;

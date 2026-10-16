@@ -6,10 +6,17 @@ import type { GameData, RoomData, SpriteData } from './types';
 
 const css = (c: number) => `rgb(${c & 255},${(c >> 8) & 255},${(c >> 16) & 255})`;
 
+/** Rectángulo en coordenadas del juego. */
+export interface CaptureRect { l: number; t: number; r: number; b: number }
+
 export class Renderer {
   ctx: CanvasRenderingContext2D;
   /** Mientras se captura, los textos se entregan aquí en lugar de dibujarse. */
   private textSink: ((s: string) => void) | null = null;
+  /** Mientras se captura: zona (en coordenadas del juego) que ocupan las imágenes dibujadas. */
+  private captureRects: CaptureRect[] | null = null;
+  /** Traducción de los textos del juego al dibujarlos (la pone la interfaz según el idioma). */
+  translate: (s: string) => string = (s) => s;
   private sprites = new Map<number, HTMLImageElement[]>();
   private masks = new Map<number, Uint8Array[]>();
   private backgrounds = new Map<string, HTMLImageElement>();
@@ -132,6 +139,7 @@ export class Renderer {
    * evita las líneas finas entre baldosas que aparecerían con drawImage escalado.
    */
   private blit(im: CanvasImageSource, sx: number, sy: number, sw: number, sh: number, x: number, y: number, w: number, h: number) {
+    this.captureRects?.push({ l: x, t: y, r: x + w, b: y + h });
     const x0 = Math.round((x - this.vl) * this.kx);
     const y0 = Math.round((y - this.vt) * this.ky);
     const x1 = Math.round((x + w - this.vl) * this.kx);
@@ -174,8 +182,10 @@ export class Renderer {
   /**
    * Dibuja `fn` en otro canvas, con la zona del juego que empieza en (left, top) a escala `scale`.
    * Los textos no se dibujan: se pasan a `onText`. Se usa para mostrar objetos del juego en HTML.
+   * Devuelve la zona del juego que ocupa cada imagen dibujada (aunque se salga del canvas).
    */
   capture(target: HTMLCanvasElement, left: number, top: number, scale: number, fn: () => void, onText: (s: string) => void) {
+    const rects: CaptureRect[] = [];
     const saved = { canvas: this.canvas, ctx: this.ctx, kx: this.kx, ky: this.ky, vl: this.vl, vt: this.vt };
     const state = this.drawState();
     this.canvas = target;
@@ -186,11 +196,14 @@ export class Renderer {
     Object.assign(this, { kx: scale, ky: scale, vl: left, vt: top });
     this.viewTransform();
     this.textSink = onText;
+    this.captureRects = rects;
     try { fn(); } finally {
       this.textSink = null;
+      this.captureRects = null;
       Object.assign(this, saved);
       this.setDrawState(state);
     }
+    return rects;
   }
 
   // ---------- Primitivas ----------
@@ -232,7 +245,7 @@ export class Renderer {
   /** Separa en líneas por '#' y, si hay ancho máximo, por palabras. */
   private lines(str: string, w: number) {
     const out: string[] = [];
-    for (const para of str.split('#')) {
+    for (const para of this.translate(String(str)).split('#')) {
       if (w <= 0) { out.push(para); continue; }
       let line = '';
       for (const word of para.split(' ')) {
@@ -250,7 +263,7 @@ export class Renderer {
   drawText(x: number, y: number, str: string) { this.drawTextExt(x, y, str, -1, -1); }
 
   drawTextExt(x: number, y: number, str: string, sep: number, w: number) {
-    if (this.textSink) { this.textSink(String(str).replace(/#/g, '\n')); return; }
+    if (this.textSink) { this.textSink(this.translate(String(str)).replace(/#/g, '\n')); return; }
     const px = this.applyFont();
     const g = this.ctx;
     g.fillStyle = css(this.font_color);

@@ -189,25 +189,26 @@ export function makeFunctions(rt: Runtime): Functions {
     file_exists: (_s, _o, name) => (localStorage.getItem(SAVE_PREFIX + String(name)) !== null ? 1 : 0),
     get_save_filename: (_s, _o, _filter, def) => {
       rt.input.clear();
-      return dialogs.prompt('Nombre de la partida a guardar:', gmString(def) || 'partida') ?? '';
+      // Los textos propios del runtime están en inglés, como los del juego, y se traducen igual.
+      return dialogs.prompt('Name of the game to save:', gmString(def) || 'game') ?? '';
     },
     get_open_filename: () => {
       rt.input.clear();
       const names = Object.keys(localStorage).filter((k) => k.startsWith(SAVE_PREFIX)).map((k) => k.slice(SAVE_PREFIX.length));
-      if (!names.length) { dialogs.message('No hay partidas guardadas.'); return ''; }
-      return dialogs.prompt(`Partidas guardadas:\n${names.join('\n')}\n\nEscribe el nombre de la que quieres cargar:`, names[names.length - 1]) ?? '';
+      if (!names.length) { dialogs.message('There are no saved games.'); return ''; }
+      return dialogs.prompt(`Saved games:#${names.join('#')}##Type the name of the one to load:`, names[names.length - 1]) ?? '';
     },
     game_save: (_s, _o, name) => {
       try {
         localStorage.setItem(SAVE_PREFIX + String(name), JSON.stringify(snapshot(rt)));
       } catch (e) {
-        dialogs.message(`No se pudo guardar: ${(e as Error).message}`);
+        dialogs.message(`Could not save: ${(e as Error).message}`);
       }
       return 0;
     },
     game_load: (_s, _o, name) => {
       const key = saveKey(name);
-      if (localStorage.getItem(key) === null) { dialogs.message(`No existe la partida "${String(name)}".`); return 0; }
+      if (localStorage.getItem(key) === null) { dialogs.message(`There is no saved game called "${String(name)}".`); return 0; }
       rt.requestLoad(key.slice(SAVE_PREFIX.length));
       return 0;
     },

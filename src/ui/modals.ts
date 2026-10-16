@@ -1,6 +1,7 @@
 // Ventanas HTML: mensajes del juego (show_message) y gestor de partidas.
 import { deleteSave, listSaves } from '../gm/functions';
-import { button, formatDate, h } from './dom';
+import { locale, t } from '../i18n';
+import { button, displaySaveName, formatDate, formatMoney, h } from './dom';
 
 const root = () => document.getElementById('modals')!;
 
@@ -32,7 +33,7 @@ export function showMessage(text: string) {
 function next() {
   const text = queue[0];
   if (text === undefined) return;
-  const ok = button('Aceptar', () => close(), { cls: 'primary' });
+  const ok = button(t('ok'), () => close(), { cls: 'primary' });
   ok.setAttribute('autofocus', '');
   const panel = h('div', { class: 'modal message' }, h('p', {}, text.replace(/#/g, '\n')), ok);
   panel.dataset.enterCloses = '1';
@@ -45,25 +46,26 @@ export function openSaves(mode: 'save' | 'load', actions: { save?: (name: string
   const render = () => {
     const saves = listSaves();
     list.replaceChildren(...(saves.length ? saves.map((s) => {
+      const shown = displaySaveName(s.name);
       const row = h('li', {},
-        h('div', { class: 'save-info' }, h('strong', {}, s.name.replace(/\.pbs$/, '')), h('small', {}, `${formatDate(s.savedAt)} · $${s.money.toLocaleString('es')}`)),
-        button(mode === 'save' ? 'Sobrescribir' : 'Cargar', () => {
+        h('div', { class: 'save-info' }, h('strong', {}, shown), h('small', {}, `${formatDate(s.savedAt)} · ${formatMoney(s.money)}`)),
+        button(mode === 'save' ? t('overwrite') : t('load'), () => {
           if (mode === 'save') { actions.save?.(s.name); close(); }
           else { close(); actions.load(s.name); }
         }, { cls: 'primary small' }),
         button('🗑', () => {
-          if (confirm(`¿Borrar la partida "${s.name}"?`)) { deleteSave(s.name); render(); }
-        }, { cls: 'small', title: 'Borrar' }),
+          if (confirm(t('confirmDelete', { name: shown }))) { deleteSave(s.name); render(); }
+        }, { cls: 'small', title: t('delete') }),
       );
       return row;
-    }) : [h('li', { class: 'empty' }, 'No hay partidas guardadas todavía.')]));
+    }) : [h('li', { class: 'empty' }, t('noSaves'))]));
   };
   render();
 
-  const children: (Node | string)[] = [h('h2', {}, mode === 'save' ? 'Guardar partida' : 'Cargar partida')];
+  const children: (Node | string)[] = [h('h2', {}, mode === 'save' ? t('saveHeading') : t('loadHeading'))];
   if (mode === 'save') {
-    const input = h('input', { type: 'text', placeholder: 'Nombre de la partida', maxlength: '40', autofocus: '' }) as HTMLInputElement;
-    input.value = `Rancho ${new Date().toLocaleDateString('es')}`;
+    const input = h('input', { type: 'text', placeholder: t('saveNamePlaceholder'), maxlength: '40', autofocus: '' }) as HTMLInputElement;
+    input.value = t('defaultSaveName', { date: new Date().toLocaleDateString(locale()) });
     const doSave = () => {
       const name = input.value.trim();
       if (!name) { input.focus(); return; }
@@ -71,8 +73,8 @@ export function openSaves(mode: 'save' | 'load', actions: { save?: (name: string
       close();
     };
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doSave(); } });
-    children.push(h('div', { class: 'row' }, input, button('Guardar', doSave, { cls: 'primary' })));
+    children.push(h('div', { class: 'row' }, input, button(t('save'), doSave, { cls: 'primary' })));
   }
-  children.push(list, h('div', { class: 'row end' }, button('Cerrar', () => close())));
+  children.push(list, h('div', { class: 'row end' }, button(t('close'), () => close())));
   const close = open(h('div', { class: 'modal saves-modal' }, ...children));
 }

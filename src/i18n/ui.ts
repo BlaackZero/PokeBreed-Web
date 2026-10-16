@@ -57,6 +57,7 @@ const es = {
   utilTerrain: 'Terreno',
   utilWindow: 'Ventana',
   utilHelp: 'Ayuda',
+  utilCheck: 'Comprobar',
 
   // Ventanas
   ok: 'Aceptar',
@@ -139,6 +140,7 @@ const en: Record<UiKey, string> = {
   utilTerrain: 'Terrain',
   utilWindow: 'Window',
   utilHelp: 'Help',
+  utilCheck: 'Check',
 
   ok: 'OK',
   cancel: 'Cancel',

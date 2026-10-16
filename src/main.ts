@@ -1,24 +1,33 @@
 import './style.css';
 import { Audio } from './gm/audio';
-import { dialogHooks, dialogs } from './gm/dialogs';
+import { dialogHooks, dialogs, rtfToText } from './gm/dialogs';
 import { Input } from './gm/input';
 import { Renderer } from './gm/render';
 import { Runtime } from './gm/runtime';
 import type { GameData, RoomData } from './gm/types';
+import { bind, getLang, onLangChange, t, tg } from './i18n';
+import { HELP_ES } from './i18n/game-es';
 import { makePatches } from './patches';
+import { AUTOSAVE } from './ui/dom';
 import { Hud } from './ui/hud';
 import { Shop } from './ui/shop';
 import { modalOpen, openSaves, showMessage } from './ui/modals';
 import { TitleScreen } from './ui/title';
 
 const BASE = 'classic/';
-const AUTOSAVE = 'Autoguardado';
 const AUTOSAVE_MS = 60_000;
 
 const canvas = document.getElementById('screen') as HTMLCanvasElement;
 const help = document.getElementById('help')!;
 const helpOpen = () => help.classList.contains('open');
 help.querySelector('button')!.addEventListener('click', () => help.classList.remove('open'));
+bind(help.querySelector('h2')!, () => t('howToPlay'));
+bind(help.querySelector('button')!, () => t('closeEsc'));
+
+// Idioma de los textos del juego original: dibujados, mensajes, preguntas y ayuda.
+dialogHooks.translate = tg;
+dialogHooks.help = (rtf) => (getLang() === 'es' ? HELP_ES : rtfToText(rtf));
+dialogHooks.choiceHint = (first, last) => t('choiceHint', { first, last });
 window.addEventListener('keydown', (e) => {
   if (helpOpen() && (e.key === 'Escape' || e.key === 'F1')) { e.preventDefault(); help.classList.remove('open'); }
 }, true);
@@ -49,6 +58,12 @@ class Game {
       ui_load_dialog: () => this.loadDialog(),
       ui_tooltip: (text) => this.shop?.tooltip(text),
     }));
+    render.translate = tg;
+    onLangChange(() => {
+      // La ayuda abierta y el canvas se rehacen en el idioma nuevo.
+      if (helpOpen()) dialogs.info(data.helpRtf);
+      if (this.rt.roomData) this.rt.draw();
+    });
     this.titleRoom = data.roomOrder[0];
     this.ranchRoom = data.resources.rooms.indexOf('room_ranch');
     this.rt.viewSizer = (room) => this.viewSizeFor(room);
@@ -164,7 +179,7 @@ class Game {
   }
 
   private toMenu() {
-    if (!confirm('¿Volver al menú principal? La partida se guardará como "Autoguardado".')) return;
+    if (!confirm(t('toMenuConfirm'))) return;
     this.autosave();
     this.showTitle();
   }
@@ -183,13 +198,13 @@ class Game {
 
   saveDialog() {
     openSaves('save', {
-      save: (name) => { this.rt.F.game_save(null as never, null as never, name); this.hud.toast(`💾 Partida guardada: ${name}`); },
+      save: (name) => { this.rt.F.game_save(null as never, null as never, name); this.hud.toast(t('savedToast', { name })); },
       load: (name) => this.rt.requestLoad(name),
     });
   }
 
   loadDialog() {
-    openSaves('load', { load: (name) => { this.rt.requestLoad(name); this.hud.toast(`📂 Partida cargada: ${name}`); } });
+    openSaves('load', { load: (name) => { this.rt.requestLoad(name); this.hud.toast(t('loadedToast', { name })); } });
   }
 
   // ---------- Bucle ----------
@@ -240,14 +255,14 @@ class Game {
 }
 
 async function boot() {
-  title.setProgress(0, 1, 'Cargando datos…');
+  title.setProgress(0, 1, t('loadingData'));
   const data = (await (await fetch(`${BASE}game.json`)).json()) as GameData;
   const render = new Renderer(canvas, data, BASE);
   const audio = new Audio(data, BASE);
   let g: Game | null = null;
   const input = new Input(canvas, () => !!g?.paused, () => g?.rt.views[0] ?? { width: canvas.width, height: canvas.height });
   await Promise.all([
-    render.load((done, total) => title.setProgress(done, total, `Cargando sprites… ${Math.round((done / total) * 100)}%`)),
+    render.load((done, total) => title.setProgress(done, total, t('loadingSprites', { pct: Math.round((done / total) * 100) }))),
     audio.load(),
   ]);
   g = new Game(data, render, audio, input);
@@ -260,5 +275,5 @@ async function boot() {
 
 boot().catch((e) => {
   console.error(e);
-  title.setProgress(0, 1, `Error al cargar: ${(e as Error).message}`);
+  title.setProgress(0, 1, t('loadError', { msg: (e as Error).message }));
 });

@@ -14,7 +14,27 @@ medallas, los textos y los sonidos son los mismos que en el `.exe`.
 npm install
 npm run dev        # http://localhost:5173
 npm run build      # web estática en dist/
+npm run preview    # sirve dist/ para probar el build
 ```
+
+## Publicar (Cloudflare Pages u otro hosting estático)
+
+El resultado de `npm run build` es una web 100 % estática (`dist/`, unos 640 archivos y 7 MB) que
+no necesita servidor: las partidas se guardan en el navegador.
+
+**Cloudflare Pages desde GitHub:** *Workers & Pages → Create → Pages → Connect to Git*, y elige este repositorio.
+
+| Ajuste | Valor |
+| --- | --- |
+| Framework preset | `None` (o `Vite`) |
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| Node | 22 (lo toma de `.nvmrc`) |
+
+**Cloudflare Pages desde tu PC:** `npm run deploy` (compila y sube `dist/` con Wrangler; la primera vez pide iniciar sesión).
+
+`public/_headers` define la caché: los JS/CSS con hash se guardan para siempre y los datos del juego, un día.
+Como las rutas son relativas (`base: './'`), también funciona en Netlify, Vercel, GitHub Pages o en una subcarpeta.
 
 ## Volver a extraer el juego
 
@@ -52,7 +72,8 @@ src/gm/           Runtime de Game Maker 5
   audio.ts        WAV con Web Audio y un sintetizador para la música MIDI
   dialogs.ts      show_message / get_string... con los diálogos del navegador
 src/patches.ts    Cambios de interfaz sobre el original (ver abajo)
-src/ui/           Pantalla de título, HUD, ficha del Pokémon, avisos y ventanas en HTML
+src/ui/           Pantalla de título, HUD, tienda, ficha del Pokémon, avisos y ventanas en HTML
+src/i18n/         Idiomas: textos de la interfaz (ui.ts) y traducción al español del juego (game-es.ts)
 src/main.ts       Carga, maquetación a pantalla completa y bucle a la velocidad del room
 ```
 
@@ -62,7 +83,8 @@ src/main.ts       Carga, maquetación a pantalla completa y bucle a la velocidad
 - **Pantalla de título** con la ilustración original y menú: Nueva partida, Continuar, Cargar y Cómo se juega.
 - **HUD** en HTML:
   - dinero, número de Pokémon, las 8 medallas y la velocidad (con − / +);
-  - barra de herramientas: tienda, terreno, centro, guardar, cargar, zoom, sonido, pantalla completa, ayuda y menú.
+  - barra de herramientas: tienda, terreno, guardar, cargar, zoom, sonido, pantalla completa, idioma, ayuda y menú.
+- **Español o inglés:** todo el juego, incluidos los textos originales (ayuda de la tienda, mensajes, preguntas, cruces de cría, medallas y la ayuda), se puede jugar entero en un idioma u otro. Se cambia con 🌐 en el título o en la barra, y se recuerda. Por defecto se usa el idioma del navegador. Los textos que falten en `game-es.ts` se muestran en inglés.
 - **Tienda en un panel lateral** (`src/ui/shop.ts`): usa los botones originales (se dibujan con su propio evento Draw y reciben los mismos clics), pero el rancho sigue visible y en marcha. El original desactivaba todas las instancias mientras estaba abierta.
 - **Ficha al pasar el ratón** sobre un Pokémon o huevo: nombre, género, barra de experiencia o eclosión y precio de venta.
 - **Mensajes:** los de cría salen como avisos y los de `show_message` como ventanas propias.

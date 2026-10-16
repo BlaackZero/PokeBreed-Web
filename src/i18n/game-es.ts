@@ -206,11 +206,17 @@ const CROSS_WORDS: Record<string, string> = {
 export const GAME_ES_PATTERNS: [RegExp, string | ((...m: string[]) => string)][] = [
   [/^They had a crossbreed of (.+?)\.?$/, 'Tuvieron una cría cruzada: $1.'],
   [/^They had a superbreed of (.+?)\.?$/, '¡Tuvieron una supercría: $1!'],
-  [/^then click the check\. Then you get the (\w+) badge\.$/i, (_m, b) => `y pulsa el visto bueno. Así conseguirás la Medalla ${GAME_ES[`${b[0].toUpperCase()}${b.slice(1).toLowerCase()} Badge`]?.replace('Medalla ', '') ?? b}.`],
+  [/^then click the check\. Then you get the (\w+) badge\.$/i, (_m, b) => `y pulsa Comprobar (✔). Así conseguirás la Medalla ${GAME_ES[`${b[0].toUpperCase()}${b.slice(1).toLowerCase()} Badge`]?.replace('Medalla ', '') ?? b}.`],
   [/^Music: (.*)$/, 'Música: $1'],
   [/^sing: (.*)$/, 'canto: $1'],
   [/^Water:(.*)$/, 'Agua:$1'],
   [/^Speed: (.*)$/, 'Velocidad: $1'],
+  // Textos del propio runtime (partidas)
+  [/^Name of the game to save:$/, 'Nombre de la partida a guardar:'],
+  [/^There are no saved games\.$/, 'No hay partidas guardadas.'],
+  [/^Saved games:#([\s\S]*)##Type the name of the one to load:$/, 'Partidas guardadas:#$1##Escribe el nombre de la que quieres cargar:'],
+  [/^Could not save: (.*)$/, 'No se pudo guardar: $1'],
+  [/^There is no saved game called "(.*)"\.$/, 'No existe la partida "$1".'],
   [/^([A-Za-z]+(?: \+ [A-Za-z]+)+) = ([^.]+)\.?$/, (_m, parts: string, result: string) =>
     `${parts.split(' + ').map((w) => CROSS_WORDS[w] ?? w).join(' + ')} = ${CROSS_WORDS[result] ?? result}`],
 ];
