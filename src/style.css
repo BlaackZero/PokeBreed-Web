@@ -106,7 +106,25 @@ body { display: flex; align-items: center; justify-content: center; }
 .chip small { color: var(--muted); font-size: 12px; }
 .hud-left { position: absolute; top: 12px; left: 12px; display: flex; gap: 8px; }
 .money .value { color: var(--gold); }
-.save-state { padding: 6px 10px; cursor: default; }
+.save-wrap { position: relative; }
+.btn.save-state { padding: 6px 10px; border-radius: 999px; font-size: 15px; background: var(--glass); }
+.save-panel {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 5;
+  width: min(320px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 10px;
+  background: var(--glass); border: 1px solid var(--glass-line); border-radius: 14px; padding: 12px;
+  backdrop-filter: blur(10px); box-shadow: 0 10px 34px rgba(0, 0, 0, .45);
+  animation: fade .15s ease-out;
+}
+.save-panel header { display: flex; align-items: center; justify-content: space-between; }
+.save-panel .save-status { margin: 0; font-weight: 700; }
+.save-panel small { color: var(--muted); line-height: 1.4; }
+.save-panel small:empty { display: none; }
+.save-panel .row { flex-wrap: wrap; }
+.save-account { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-top: 10px; border-top: 1px solid var(--glass-line); }
+.save-account:empty { display: none; }
+.save-account .who { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; min-width: 0; }
+.save-account .who img { width: 24px; height: 24px; border-radius: 50%; }
+.save-account .btn.login { width: 100%; background: #fff; color: #1f1f1f; border-color: #dadce0; }
 .save-state.warn { border-color: rgba(242, 193, 78, .6); }
 .save-state.pulse { animation: save-pulse .8s ease-out; }
 @keyframes save-pulse { 30% { transform: scale(1.18); background: rgba(91, 209, 107, .35); } }

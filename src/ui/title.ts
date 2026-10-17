@@ -76,18 +76,20 @@ export class TitleScreen {
   /** Cuenta de Core Utils: login con Google para guardar en la nube. */
   private showAccount() {
     if (!cloudEnabled) { this.account.replaceChildren(); return; }
-    const { user, status } = this.store;
+    const { user, busy, failingSince, state } = this.store;
+    // En el título no se espera: si la nube no respondió, "Continuar" usa la partida de este dispositivo.
+    const offline = failingSince > 0;
     if (!user) {
       this.account.replaceChildren(
         button(`☁️ ${t('loginGoogle')}`, () => this.actions.login(), { cls: 'login' }),
-        h('small', {}, status === 'offline' ? t('cloudOffline') : t('loginHint')),
+        h('small', {}, offline ? t('cloudOffline') : t('loginHint')),
       );
       return;
     }
     const avatar = user.avatarUrl ? h('img', { src: user.avatarUrl, alt: '', referrerpolicy: 'no-referrer' }) : '👤';
     this.account.replaceChildren(
       h('span', { class: 'who' }, avatar, user.name ?? user.email),
-      h('small', {}, status === 'syncing' ? t('cloudSyncing') : status === 'offline' ? t('cloudOffline') : t('cloudOn')),
+      h('small', {}, busy ? t('cloudSyncing') : offline ? t('cloudOffline') : state === 'conflict' ? t('saveState_conflict') : t('cloudOn')),
       button(t('logout'), () => this.actions.logout(), { cls: 'small' }),
     );
   }

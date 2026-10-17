@@ -80,6 +80,18 @@ class Game {
     this.ranchRoom = data.resources.rooms.indexOf('room_ranch');
     this.rt.viewSizer = (room) => this.viewSizeFor(room);
     this.hud = new Hud(this.rt, (i, f) => this.spriteUrl(i, f), {
+      saveNow: async () => {
+        if (!this.inRanch()) return;
+        this.lastAutosave = performance.now();
+        await store.saveNow(this.rt);
+        this.hud.toast(t('savedToast'));
+      },
+      useCloud: async () => {
+        if (await store.pullCloud()) { this.rt.requestLoad(store.slotName); this.hud.toast(t('cloudLoadedToast')); }
+      },
+      // Antes de salir hacia Google se guarda lo último.
+      login: () => { this.autosave(true); login(); },
+      logout: () => void store.logout(),
       help: () => dialogs.info(data.helpRtf),
       menu: () => this.toMenu(),
       zoom: (k) => this.zoom(k),
@@ -99,7 +111,10 @@ class Game {
     this.touchGestures(input);
     // En el móvil la página puede cerrarse sin avisar: se guarda al pasar a segundo plano.
     window.addEventListener('pagehide', () => this.autosave(true));
-    document.addEventListener('visibilitychange', () => { if (document.hidden) this.autosave(true); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.autosave(true);
+      else if (this.inRanch()) void store.checkRemote();
+    });
   }
 
   get paused() { return title.visible || modalOpen() || helpOpen(); }

@@ -2,14 +2,15 @@
 // ficha del Pokémon bajo el ratón y avisos de cría.
 import type { Instance } from '../gm/instance';
 import type { Runtime } from '../gm/runtime';
-import { bind, getLang, onLangChange, setLang, t, tg } from '../i18n';
+import { bind, getLang, setLang, t, tg } from '../i18n';
 import { BADGE_NAMES, type UiKey } from '../i18n/ui';
-import type { SaveStatus, SaveStore } from '../save/store';
+import type { SaveStore } from '../save/store';
+import { SavePanel, type SavePanelActions } from './save-panel';
 import { button, formatMoney, h, setText } from './dom';
 
 const BADGES = ['boulder', 'cascade', 'thunder', 'rainbow', 'soul', 'marsh', 'volcano', 'earth'];
 
-export interface HudActions {
+export interface HudActions extends SavePanelActions {
   help: () => void;
   menu: () => void;
   zoom: (factor: number) => void;
@@ -67,10 +68,11 @@ export class Hud {
   private pointer = { x: 0, y: 0, inside: false, touch: false };
   private breedMsgIndex = -1;
 
-  /** Indicador del autoguardado. */
-  private saveChip = h('div', { class: 'chip save-state' });
+  /** Indicador del autoguardado y su panel. */
+  readonly savePanel: SavePanel;
 
   constructor(private rt: Runtime, private spriteUrl: (spriteIndex: number, frame: number) => string, actions: HudActions, store: SaveStore) {
+    this.savePanel = new SavePanel(store, actions);
     this.badges = BADGES.map((b, k) => bind(
       h('img', { src: spriteUrl(this.spriteIndex(`${b}_badge`), 0), alt: '' }) as HTMLImageElement,
       () => t('badge', { name: BADGE_NAMES[getLang()][k] }), 'title'));
@@ -92,7 +94,7 @@ export class Hud {
       h('div', { class: 'hud-left' },
         h('div', { class: 'chip money' }, '💰', this.money),
         h('div', { class: 'chip' }, '🐾', this.count),
-        this.saveChip,
+        this.savePanel.el,
       ),
       h('div', { class: 'hud-center chip badges' }, ...this.badges),
       h('div', { class: 'hud-right chip speed' },
@@ -132,25 +134,6 @@ export class Hud {
     canvas.addEventListener('pointerleave', () => { this.pointer.inside = false; });
 
     this.breedMsgIndex = rt.data.resources.objects.indexOf('obj_breed_message');
-    const showSave = () => this.showSave(store.status, !!store.user);
-    store.onChange(showSave);
-    onLangChange(showSave);
-    showSave();
-  }
-
-  private showSave(status: SaveStatus, online: boolean) {
-    const [icon, key]: [string, UiKey] = status === 'syncing' ? ['🔄', 'saveSyncing']
-      : status === 'synced' ? ['☁️', 'saveSynced']
-      : status === 'offline' ? ['⚠️', 'saveOffline']
-      : status === 'conflict' ? ['⚠️', 'saveConflict']
-      : [online ? '☁️' : '💾', 'saveLocal'];
-    this.saveChip.textContent = icon;
-    this.saveChip.title = t(key);
-    this.saveChip.classList.toggle('warn', status === 'offline' || status === 'conflict');
-    // Pequeño destello cada vez que se guarda.
-    this.saveChip.classList.remove('pulse');
-    void this.saveChip.offsetWidth;
-    if (status !== 'idle') this.saveChip.classList.add('pulse');
   }
 
   private spriteIndex(name: string) { return this.rt.data.sprites[name]?.id ?? -1; }
@@ -193,6 +176,7 @@ export class Hud {
     }
 
     this.updateCard();
+    this.savePanel.refresh();
   }
 
   private updateCard() {
