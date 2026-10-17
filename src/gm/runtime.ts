@@ -12,6 +12,8 @@ import type { Input } from './input';
 import type { Audio } from './audio';
 
 export const EV = { CREATE: 0, DESTROY: 1, ALARM: 2, STEP: 3, COLLISION: 4, KEYBOARD: 5, MOUSE: 6, OTHER: 7, DRAW: 8, KEYPRESS: 9, KEYRELEASE: 10 };
+/** Eventos de ratón de botón (mantener, pulsar) que hacen que un toque cuente como clic y no arrastre la vista. */
+const MOUSE_BUTTON_EVENTS = [0, 1, 2, 4, 5, 6];
 
 class ExitSignal { }
 class ReturnSignal { constructor(public value: any) {} }
@@ -93,6 +95,9 @@ export class Runtime {
   viewSizer: ViewSizer | null = null;
   /** Instancias que muestra la interfaz HTML: no se dibujan en el canvas ni reciben el ratón del canvas. */
   uiOwned: ((i: Instance) => boolean) | null = null;
+  /** Instancias en su evento Destroy, y las que ese evento ha cambiado de objeto (no se destruyen). */
+  private destroying = new Set<Instance>();
+  private revived = new Set<Instance>();
 
   /** Cambia el tamaño de la vista 0 manteniendo su centro dentro del room. */
   setViewSize(width: number, height: number) {
@@ -493,8 +498,14 @@ export class Runtime {
   }
 
   destroyInstance(inst: Instance, runEvent = true) {
-    if (inst.dead) return;
-    if (runEvent) this.event(inst, EV.DESTROY, 0);
+    if (inst.dead || this.destroying.has(inst)) return;
+    if (runEvent) {
+      this.destroying.add(inst);
+      try { this.event(inst, EV.DESTROY, 0); } finally { this.destroying.delete(inst); }
+      // Si el evento Destroy cambia la instancia de objeto, sigue viva (así la Master Ball
+      // vuelve a aparecer cada vez que vende un Pokémon, hasta que se le hace clic derecho).
+      if (this.revived.delete(inst)) return;
+    }
     inst.dead = true;
     inst.obj.instances.delete(inst);
     this.byId.delete(inst.id);
@@ -503,6 +514,7 @@ export class Runtime {
   changeInstance(inst: Instance, objIndex: number, perform: boolean) {
     const obj = this.objectByIndex(objIndex);
     if (!obj || inst.dead) return;
+    if (this.destroying.has(inst)) this.revived.add(inst);
     if (perform) this.event(inst, EV.DESTROY, 0);
     inst.obj.instances.delete(inst);
     inst.applyObject(obj);
@@ -522,6 +534,20 @@ export class Runtime {
     const m = inst.maskData;
     if (!m?.precise) return true;
     return this.render.solidPixel(m, inst.frame(), Math.floor(px - inst.x + m.ox), Math.floor(py - inst.y + m.oy));
+  }
+
+  /**
+   * Instancia bajo el punto de la vista (px, py) con eventos de botón del ratón, o null.
+   * `accept` permite descartar algunas (las pantallas táctiles arrastran la vista si no hay ninguna).
+   */
+  mouseTargetAt(px: number, py: number, accept: (i: Instance) => boolean = () => true) {
+    const x = px + this.views[0].left;
+    const y = py + this.views[0].top;
+    for (const i of this.instances) {
+      if (i.dead || !i.active || this.uiOwned?.(i) || !this.containsPoint(i, x, y)) continue;
+      if (MOUSE_BUTTON_EVENTS.some((n) => this.resolve(i.obj, `${EV.MOUSE}:${n}`)) && accept(i)) return i;
+    }
+    return null;
   }
 
   /** Colisión entre dos instancias (opcionalmente con `a` en otra posición). */

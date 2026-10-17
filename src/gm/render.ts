@@ -315,6 +315,12 @@ export class Renderer {
 
   toggleFullscreen() {
     if (document.fullscreenElement) void document.exitFullscreen();
-    else void document.documentElement.requestFullscreen?.();
+    else {
+      // En el móvil, además, se gira a horizontal si el navegador lo permite.
+      const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
+      void document.documentElement.requestFullscreen?.()
+        .then(() => orientation?.lock?.('landscape'))
+        .catch(() => {});
+    }
   }
 }

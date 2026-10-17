@@ -22,7 +22,7 @@ export const makePatches = (ui: UiFunctions): Patches => ({
   scripts: {
     // Recuadro "Speed: x/30" de la esquina superior derecha.
     scp_draw_speed: '',
-    // Guardar / cargar (F5, F6 y botones de la tienda): ventana de partidas en vez de pedir un archivo.
+    // Guardar / cargar (F5, F6): la partida se guarda sola; F5 fuerza un guardado.
     scp_save_game: 'ui_save_dialog();',
     scp_load_game: 'ui_load_dialog();',
   },
@@ -41,7 +41,7 @@ export const makePatches = (ui: UiFunctions): Patches => ({
       'instance_create(x + 170, y + 160, terrain_type_btn); instance_create(x + 70, y + 90, badge_type_btn);',
       'instance_create(x + 20, y + 20, pokeball_btn); instance_create(x + 20, y + 90, rubberball_btn);',
       'instance_create(x + 20, y + 160, masterball_btn);',
-      'instance_create(x + 20, y + 400, save_btn); instance_create(x + 70, y + 400, load_btn);',
+      // Sin guardar / cargar: la partida se guarda sola.
       'instance_create(x + 120, y + 400, terrain_edit_btn); instance_create(x + 170, y + 400, obj_maximize_btn);',
       'instance_create(x + 345, y + 350, obj_help_btn); instance_create(x + 345, y + 400, exit_btn);',
     ].join('\n'),

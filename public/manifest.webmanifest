@@ -1,0 +1,11 @@
+{
+  "name": "Pokebreed Ultimate",
+  "short_name": "Pokebreed",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0b0d12",
+  "theme_color": "#0b0d12",
+  "icons": [{ "src": "classic/sprites/spr_fire_egg_0.png", "type": "image/png", "sizes": "any" }]
+}

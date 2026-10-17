@@ -4,18 +4,26 @@ import { dialogHooks, dialogs, rtfToText } from './gm/dialogs';
 import { Input } from './gm/input';
 import { Renderer } from './gm/render';
 import { Runtime } from './gm/runtime';
+import type { Instance } from './gm/instance';
 import type { GameData, RoomData } from './gm/types';
 import { bind, getLang, onLangChange, t, tg } from './i18n';
 import { HELP_ES } from './i18n/game-es';
 import { makePatches } from './patches';
-import { AUTOSAVE } from './ui/dom';
+import { login } from './save/cloud';
+import { SaveStore } from './save/store';
+import { formatDate, formatMoney } from './ui/dom';
 import { Hud } from './ui/hud';
 import { Shop } from './ui/shop';
-import { modalOpen, openSaves, showMessage } from './ui/modals';
+import { modalOpen, showMessage } from './ui/modals';
 import { TitleScreen } from './ui/title';
 
 const BASE = 'classic/';
-const AUTOSAVE_MS = 60_000;
+/** Autoguardado periódico. */
+const AUTOSAVE_MS = 15_000;
+/** Tras comprar, vender o cobrar (cambia el dinero), se guarda a los pocos segundos. */
+const AUTOSAVE_AFTER_CHANGE_MS = 3_000;
+
+const store = new SaveStore();
 
 const canvas = document.getElementById('screen') as HTMLCanvasElement;
 const help = document.getElementById('help')!;
@@ -32,11 +40,12 @@ window.addEventListener('keydown', (e) => {
   if (helpOpen() && (e.key === 'Escape' || e.key === 'F1')) { e.preventDefault(); help.classList.remove('open'); }
 }, true);
 
-const title = new TitleScreen(`${BASE}backgrounds/bkg_title.png`, {
+const title = new TitleScreen(`${BASE}backgrounds/bkg_title.png`, store, {
   newGame: () => game?.newGame(),
-  continueGame: (name) => game?.continueGame(name),
-  load: () => openSaves('load', { load: (name) => game?.continueGame(name) }),
+  continueGame: () => game?.continueGame(),
   help: () => game && dialogs.info(game.rt.data.helpRtf),
+  login,
+  logout: () => void store.logout().then(() => title.showMenu()),
 });
 document.getElementById('ui')!.append(title.el);
 
@@ -51,11 +60,14 @@ class Game {
   private leavingTitle = false;
   private userZoom = 1;
   private lastAutosave = performance.now();
+  private lastMoney: unknown = undefined;
+  private moneyChangedAt = 0;
 
   constructor(public data: GameData, public render: Renderer, public audio: Audio, input: Input) {
     this.rt = new Runtime(data, render, input, audio, makePatches({
-      ui_save_dialog: () => this.saveDialog(),
-      ui_load_dialog: () => this.loadDialog(),
+      // F5 y F6 del original: la partida se guarda sola.
+      ui_save_dialog: () => { this.autosave(true); this.hud.toast(t('savedToast')); },
+      ui_load_dialog: () => this.hud.toast(t('autosaveHint')),
       ui_tooltip: (text) => this.shop?.tooltip(text),
     }));
     render.translate = tg;
@@ -68,14 +80,12 @@ class Game {
     this.ranchRoom = data.resources.rooms.indexOf('room_ranch');
     this.rt.viewSizer = (room) => this.viewSizeFor(room);
     this.hud = new Hud(this.rt, (i, f) => this.spriteUrl(i, f), {
-      save: () => this.saveDialog(),
-      load: () => this.loadDialog(),
       help: () => dialogs.info(data.helpRtf),
       menu: () => this.toMenu(),
       zoom: (k) => this.zoom(k),
       fullscreen: () => render.toggleFullscreen(),
       toggleMute: () => { audio.setMuted(!audio.muted); return audio.muted; },
-    });
+    }, store);
     this.shop = new Shop(this.rt, render, () => { canvas.focus(); this.rt.draw(); });
     this.hud.el.append(this.shop.el);
     document.getElementById('ui')!.append(this.hud.el);
@@ -86,8 +96,10 @@ class Game {
       e.preventDefault();
       if (!this.paused) this.zoom(e.deltaY < 0 ? 1.1 : 1 / 1.1);
     }, { passive: false });
-    window.addEventListener('beforeunload', () => this.autosave());
-    document.addEventListener('visibilitychange', () => { if (document.hidden) this.autosave(); });
+    this.touchGestures(input);
+    // En el móvil la página puede cerrarse sin avisar: se guarda al pasar a segundo plano.
+    window.addEventListener('pagehide', () => this.autosave(true));
+    document.addEventListener('visibilitychange', () => { if (document.hidden) this.autosave(true); });
   }
 
   get paused() { return title.visible || modalOpen() || helpOpen(); }
@@ -133,17 +145,17 @@ class Game {
     rt.draw();
   }
 
-  zoom(k: number) {
+  /** Zoom manteniendo fijo un punto de la vista (por defecto, el que hay bajo el ratón). */
+  zoom(k: number, at = { x: this.rt.input.mouseX, y: this.rt.input.mouseY }) {
     const rt = this.rt;
     const room = rt.roomData;
     if (!room || (room.width <= 1024 && room.height <= 768)) return;
     const { fit, base } = this.zoomLimits(room);
     const v = rt.views[0];
-    // Mantiene fijo el punto bajo el ratón.
-    const fx = rt.input.mouseX / v.width;
-    const fy = rt.input.mouseY / v.height;
-    const wx = v.left + rt.input.mouseX;
-    const wy = v.top + rt.input.mouseY;
+    const fx = at.x / v.width;
+    const fy = at.y / v.height;
+    const wx = v.left + at.x;
+    const wy = v.top + at.y;
     this.userZoom = Math.max(fit / base, Math.min(4 / base, this.userZoom * k));
     const size = this.viewSizeFor(room);
     v.width = size.width;
@@ -154,37 +166,67 @@ class Game {
     this.layout();
   }
 
+  /** Pantallas táctiles: arrastrar el suelo mueve la vista y dos dedos hacen zoom. */
+  private touchGestures(input: Input) {
+    const rt = this.rt;
+    const terrainParent = rt.objectByIndex(this.data.resources.objects.indexOf('obj_terrain_edit_parent'));
+    const terrain = new Set(terrainParent?.family ?? []);
+    // Vallas y terrenos solo responden al ratón en el modo terreno.
+    const accept = (i: Instance) => Number(rt.globals.terrain_edit) === 1 || !terrain.has(i.obj);
+    const scale = () => rt.views[0].width / canvas.getBoundingClientRect().width;
+    input.gestures = {
+      grabbable: (x, y) => !!rt.mouseTargetAt(x, y, accept),
+      pan: (dx, dy) => {
+        const v = rt.views[0];
+        const s = scale();
+        v.left -= dx * s;
+        v.top -= dy * s;
+        rt.clampView();
+        rt.draw();
+      },
+      pinch: (k, cx, cy) => {
+        const r = canvas.getBoundingClientRect();
+        const s = scale();
+        this.zoom(k, { x: (cx - r.left) * s, y: (cy - r.top) * s });
+      },
+    };
+  }
+
   // ---------- Partidas ----------
 
   newGame() {
     this.audio.unlock();
+    store.clear();
     this.rt.startGame();
     this.rt.gotoRoom(this.ranchRoom);
     this.enterGame();
   }
 
-  continueGame(name: string) {
+  continueGame() {
     this.audio.unlock();
     this.rt.startGame();
-    this.rt.requestLoad(name);
+    this.rt.requestLoad(store.slotName);
     this.enterGame();
   }
 
   private enterGame() {
+    store.playing = true;
     this.leavingTitle = true;
     title.hide();
     this.hud.show(true);
     this.lastAutosave = performance.now();
+    this.lastMoney = undefined;
     canvas.focus();
   }
 
   private toMenu() {
     if (!confirm(t('toMenuConfirm'))) return;
-    this.autosave();
+    this.autosave(true);
     this.showTitle();
   }
 
   private showTitle() {
+    store.playing = false;
     this.audio.stopAll();
     this.hud.show(false);
     title.show();
@@ -192,19 +234,22 @@ class Game {
 
   private inRanch() { return !title.visible && this.rt.room !== this.titleRoom; }
 
-  autosave() {
-    if (this.inRanch()) this.rt.F.game_save(null as never, null as never, AUTOSAVE);
+  /** Guarda la partida; `flush` la sube ya a la nube (al salir o pasar a segundo plano). */
+  autosave(flush = false) {
+    if (!this.inRanch()) return;
+    this.lastAutosave = performance.now();
+    store.save(this.rt, flush);
   }
 
-  saveDialog() {
-    openSaves('save', {
-      save: (name) => { this.rt.F.game_save(null as never, null as never, name); this.hud.toast(t('savedToast', { name })); },
-      load: (name) => this.rt.requestLoad(name),
-    });
-  }
-
-  loadDialog() {
-    openSaves('load', { load: (name) => { this.rt.requestLoad(name); this.hud.toast(t('loadedToast', { name })); } });
+  /** Autoguardado periódico y poco después de cada cambio de dinero. */
+  private autosaveTick(now: number) {
+    const money = this.rt.globals.money;
+    if (money !== this.lastMoney) {
+      if (this.lastMoney !== undefined) this.moneyChangedAt = now;
+      this.lastMoney = money;
+    }
+    const changed = this.moneyChangedAt > this.lastAutosave && now - this.moneyChangedAt > AUTOSAVE_AFTER_CHANGE_MS;
+    if (changed || now - this.lastAutosave > AUTOSAVE_MS) this.autosave();
   }
 
   // ---------- Bucle ----------
@@ -232,7 +277,7 @@ class Game {
         if (n === 8) acc = 0;
         if (rt.room !== lastRoom) { lastRoom = rt.room; this.layout(); }
         if (n > 0) rt.draw();
-        if (now - this.lastAutosave > AUTOSAVE_MS) { this.lastAutosave = now; this.autosave(); }
+        this.autosaveTick(now);
       } else {
         acc = 0;
       }
@@ -270,7 +315,16 @@ async function boot() {
   dialogHooks.message = (msg) => { input.clear(); showMessage(msg); };
   if (import.meta.env.DEV) Object.assign(window, { rt: g.rt, game: g });
   g.start();
+  // Con sesión iniciada se trae la partida de la nube (o se sube la de aquí) antes de mostrar
+  // "Continuar"; sin conexión no se espera más de unos segundos.
+  title.setProgress(1, 1, t('cloudSyncing'));
+  const synced = store.connect((local, remote) => confirm(t('cloudChoose', {
+    remote: `${formatMoney(remote.money)} · ${formatDate(remote.savedAt)}`,
+    local: `${formatMoney(local.money)} · ${formatDate(local.savedAt)}`,
+  })));
+  await Promise.race([synced, new Promise((r) => setTimeout(r, 4000))]);
   title.showMenu();
+  void synced.then(() => { if (title.visible) title.showMenu(); });
 }
 
 boot().catch((e) => {

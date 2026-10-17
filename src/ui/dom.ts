@@ -29,9 +29,3 @@ export const formatMoney = (n: number) => `$${(Number(n) || 0).toLocaleString(lo
 
 /** Nombre interno del autoguardado (no cambia con el idioma para no perder la partida). */
 export const AUTOSAVE = 'Autoguardado';
-
-/** Nombre de una partida tal como se enseña. */
-export const displaySaveName = (name: string) => {
-  const n = name.replace(/\.pbs$/, '');
-  return n === AUTOSAVE ? t('autosave') : n;
-};

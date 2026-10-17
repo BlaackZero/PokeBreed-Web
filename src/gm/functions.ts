@@ -238,7 +238,7 @@ interface Snapshot {
 const INST_FIELDS = ['id', 'x', 'y', 'xprevious', 'yprevious', 'xstart', 'ystart', 'hspeed', 'vspeed', 'friction', 'gravity',
   'gravity_direction', 'sprite_index', 'image_index', 'image_speed', 'image_single', 'depth', 'visible', 'solid', 'persistent', 'active'] as const;
 
-function snapshot(rt: Runtime): Snapshot {
+export function snapshot(rt: Runtime): Snapshot {
   return {
     savedAt: Date.now(),
     room: rt.room,

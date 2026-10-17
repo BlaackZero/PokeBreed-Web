@@ -2,15 +2,14 @@
 // ficha del Pokémon bajo el ratón y avisos de cría.
 import type { Instance } from '../gm/instance';
 import type { Runtime } from '../gm/runtime';
-import { bind, getLang, setLang, t, tg } from '../i18n';
+import { bind, getLang, onLangChange, setLang, t, tg } from '../i18n';
 import { BADGE_NAMES, type UiKey } from '../i18n/ui';
+import type { SaveStatus, SaveStore } from '../save/store';
 import { button, formatMoney, h, setText } from './dom';
 
 const BADGES = ['boulder', 'cascade', 'thunder', 'rainbow', 'soul', 'marsh', 'volcano', 'earth'];
 
 export interface HudActions {
-  save: () => void;
-  load: () => void;
   help: () => void;
   menu: () => void;
   zoom: (factor: number) => void;
@@ -65,21 +64,35 @@ export class Hud {
   private cardSell = h('small', {});
   private toasts = h('div', { class: 'toasts' });
   private toasted = new WeakSet<Instance>();
-  private pointer = { x: 0, y: 0, inside: false };
+  private pointer = { x: 0, y: 0, inside: false, touch: false };
   private breedMsgIndex = -1;
 
-  constructor(private rt: Runtime, private spriteUrl: (spriteIndex: number, frame: number) => string, actions: HudActions) {
+  /** Indicador del autoguardado. */
+  private saveChip = h('div', { class: 'chip save-state' });
+
+  constructor(private rt: Runtime, private spriteUrl: (spriteIndex: number, frame: number) => string, actions: HudActions, store: SaveStore) {
     this.badges = BADGES.map((b, k) => bind(
       h('img', { src: spriteUrl(this.spriteIndex(`${b}_badge`), 0), alt: '' }) as HTMLImageElement,
       () => t('badge', { name: BADGE_NAMES[getLang()][k] }), 'title'));
     const mute = iconButton('🔊', () => { mute.textContent = actions.toggleMute() ? '🔇' : '🔊'; }, 'mute');
     const lang = bind(iconButton('', () => setLang(getLang() === 'es' ? 'en' : 'es'), 'langButtonTitle', 'lang'), () => `🌐 ${t('langButton')}`);
     const key = (code: number) => () => rt.input.tap(code);
+    // Pantallas táctiles: qué botón del ratón hace un toque.
+    const modes: HTMLButtonElement[] = [];
+    const mode = (icon: string, b: number, title: UiKey) => {
+      const m = iconButton(icon, () => {
+        rt.input.touchButton = b;
+        modes.forEach((x) => x.classList.toggle('active', x === m));
+      }, title, b === 0 ? 'active' : '');
+      modes.push(m);
+      return m;
+    };
 
     this.el = h('div', { class: 'hud' },
       h('div', { class: 'hud-left' },
         h('div', { class: 'chip money' }, '💰', this.money),
         h('div', { class: 'chip' }, '🐾', this.count),
+        this.saveChip,
       ),
       h('div', { class: 'hud-center chip badges' }, ...this.badges),
       h('div', { class: 'hud-right chip speed' },
@@ -91,13 +104,17 @@ export class Hud {
       h('div', { class: 'toolbar' },
         tool('🛒', 'shop', key(13), 'shopTitle', 'primary'),
         tool('🧱', 'terrain', key(84), 'terrainTitle'),
-        tool('💾', 'save', actions.save, 'saveTitle'),
-        tool('📂', 'load', actions.load, 'loadTitle'),
+        h('span', { class: 'touch-modes' },
+          h('span', { class: 'sep' }),
+          mode('👆', 0, 'touchLeft'),
+          mode('🎯', 2, 'touchRight'),
+          mode('✨', 1, 'touchMiddle'),
+        ),
         h('span', { class: 'sep' }),
         iconButton('➖', () => actions.zoom(1 / 1.15), 'zoomOut'),
         iconButton('➕', () => actions.zoom(1.15), 'zoomIn'),
         mute,
-        iconButton('⛶', actions.fullscreen, 'fullscreen'),
+        ...(document.fullscreenEnabled ? [iconButton('⛶', actions.fullscreen, 'fullscreen')] : []),
         lang,
         iconButton('❔', actions.help, 'help'),
         iconButton('🏠', actions.menu, 'menu'),
@@ -109,10 +126,31 @@ export class Hud {
       h('div', { class: 'exp' }, h('span', { class: 'bar' }, this.cardBar), this.cardExp), this.cardSell));
 
     const canvas = document.getElementById('screen')!;
-    canvas.addEventListener('pointermove', (e) => { this.pointer = { x: e.clientX, y: e.clientY, inside: true }; });
+    const track = (e: PointerEvent) => { this.pointer = { x: e.clientX, y: e.clientY, inside: true, touch: e.pointerType === 'touch' }; };
+    canvas.addEventListener('pointermove', track);
+    canvas.addEventListener('pointerdown', track);
     canvas.addEventListener('pointerleave', () => { this.pointer.inside = false; });
 
     this.breedMsgIndex = rt.data.resources.objects.indexOf('obj_breed_message');
+    const showSave = () => this.showSave(store.status, !!store.user);
+    store.onChange(showSave);
+    onLangChange(showSave);
+    showSave();
+  }
+
+  private showSave(status: SaveStatus, online: boolean) {
+    const [icon, key]: [string, UiKey] = status === 'syncing' ? ['🔄', 'saveSyncing']
+      : status === 'synced' ? ['☁️', 'saveSynced']
+      : status === 'offline' ? ['⚠️', 'saveOffline']
+      : status === 'conflict' ? ['⚠️', 'saveConflict']
+      : [online ? '☁️' : '💾', 'saveLocal'];
+    this.saveChip.textContent = icon;
+    this.saveChip.title = t(key);
+    this.saveChip.classList.toggle('warn', status === 'offline' || status === 'conflict');
+    // Pequeño destello cada vez que se guarda.
+    this.saveChip.classList.remove('pulse');
+    void this.saveChip.offsetWidth;
+    if (status !== 'idle') this.saveChip.classList.add('pulse');
   }
 
   private spriteIndex(name: string) { return this.rt.data.sprites[name]?.id ?? -1; }
@@ -186,7 +224,8 @@ export class Hud {
     const sell = Number(target.v.sell);
     setText(this.cardSell, sell > 0 ? t('sellsFor', { price: sell }) : '');
     const x = Math.min(this.pointer.x + 18, window.innerWidth - 240);
-    const y = Math.min(this.pointer.y + 18, window.innerHeight - 110);
+    // Con el dedo, la ficha va por encima para que no la tape.
+    const y = this.pointer.touch ? Math.max(8, this.pointer.y - 130) : Math.min(this.pointer.y + 18, window.innerHeight - 110);
     this.card.style.transform = `translate(${x}px, ${y}px)`;
     this.card.classList.add('on');
   }
